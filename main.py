@@ -31,5 +31,5 @@ async def root():
 
 # Registra as rotas
 app.include_router(cliente_routes.router)
-#app.include_router(produto_routes.router)
-#app.include_router(pedido_routes.router)
+app.include_router(produto_routes.router)
+app.include_router(pedido_routes.router)

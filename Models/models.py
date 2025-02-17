@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, TypeVar, Generic
-from odmantic import Model
+from odmantic import Model, ObjectId, Field
 from pydantic import BaseModel
 from enum import Enum
 
@@ -39,7 +39,12 @@ class Produto(Model):
     preco: float
     estoque: int
 
-'''
+class ProdutoAtualizado(BaseModel):
+    nome: Optional[str] = None
+    categoria: Optional[str] = None
+    preco: Optional[float] = None
+    estoque: Optional[int] = None
+    
 class StatusPedidoEnum(str, Enum):
     PENDENTE = "Pendente"
     EM_PROCESSAMENTO = "Em Processamento"
@@ -48,36 +53,16 @@ class StatusPedidoEnum(str, Enum):
     ENTREGUE = "Entregue"
     CANCELADO = "Cancelado"
 
-class StatusPedido(SQLModel, table=True):
-    __tablename__ = "status_pedido"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    nome: StatusPedidoEnum
-    descricao: str
-    
-    pedidos: List["Pedido"] = Relationship(back_populates="status")
-
-class Pedido(SQLModel, table=True):
-    __tablename__ = "pedido"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    cliente_id: Optional[int] = Field(foreign_key="cliente.id")
-    status_id: Optional[int] = Field(foreign_key="status_pedido.id")
+class Pedido(Model):
+    cliente_id: ObjectId
+    status: str
     data_pedido: datetime = Field(default_factory=datetime.now)
     valor_total: float
-    
-    cliente: Optional["Cliente"] = Relationship(back_populates="pedidos")
-    status: Optional[StatusPedido] = Relationship(back_populates="pedidos")
-    itens: List["ItemPedido"] = Relationship(back_populates="pedido")
 
-class ItemPedido(SQLModel, table=True):
-    __tablename__ = "item_pedido"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    pedido_id: Optional[int] = Field(foreign_key="pedido.id")
-    produto_id: Optional[int] = Field(foreign_key="produto.id")
+    model_config = {"parse_doc_with_default_factories": True}
+
+class ItemPedido(Model):
+    pedido_id: ObjectId  
+    produto_id: ObjectId
     quantidade: int
     preco_unitario: float
-    
-    pedido: Optional["Pedido"] = Relationship(back_populates="itens")
-    produto: Optional["Produto"] = Relationship(back_populates="itens")
-
-'''
-

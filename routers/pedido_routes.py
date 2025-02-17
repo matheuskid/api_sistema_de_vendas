@@ -1,42 +1,31 @@
-'''
-
-from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlmodel import Session, select
-from sqlalchemy import func
+from fastapi import APIRouter, HTTPException, Query
 from Models.models import (
     Pedido, 
     ItemPedido, 
     PaginatedResponse, 
-    StatusPedido, 
     StatusPedidoEnum,
     Cliente,
     Produto
 )
-from Context.database import get_session
+from Context.database import engine
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import selectinload
-from sqlalchemy import delete
 from datetime import datetime, date
-
+from odmantic import Model, ObjectId
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
-class PedidoCreate(BaseModel):
-    cliente_id: int
-    itens: List[dict] = Field(..., example=[{
-        "produto_id": 1,
-        "quantidade": 2,
-        "preco_unitario": 10.50
-    }])
+class ProdutoPedido(Model):
+    quantidade: int
+    preco_unitario: float
+
+class PedidoCreate(Model):
+    cliente_id: ObjectId
+    itens: List[ProdutoPedido]
 
 class PedidoUpdate(BaseModel):
-    status: Optional[str] = Field(None, description="Novo status do pedido")
-    itens: Optional[List[dict]] = Field(None, example=[{
-        "produto_id": 1,
-        "quantidade": 2,
-        "preco_unitario": 10.50
-    }])
+    status: Optional[str] = None
+    itens: Optional[List[dict]] = None
 
 # Modelos de resposta
 class ProdutoResponse(BaseModel):
@@ -64,10 +53,16 @@ class PedidoResponse(BaseModel):
         from_attributes = True
 
 @router.post("/", response_model=Pedido)
-def criar_pedido(pedido_data: PedidoCreate, session: Session = Depends(get_session)):
+async def criar_pedido(pedido_data: PedidoCreate):
+
+
+    # FAZER COM TRANSACTION
+
+
+
     try:
         # Verifica se o cliente existe
-        cliente = session.get(Cliente, pedido_data.cliente_id)
+        cliente = engine.find(Cliente, Cliente.id == pedido_data.cliente_id)
         if not cliente:
             raise HTTPException(
                 status_code=404,
@@ -75,75 +70,65 @@ def criar_pedido(pedido_data: PedidoCreate, session: Session = Depends(get_sessi
             )
 
         # Busca o status inicial (Pendente)
-        status_inicial = session.exec(
-            select(StatusPedido)
-            .where(StatusPedido.nome == StatusPedidoEnum.PENDENTE)
-        ).first()
-        
-        if not status_inicial:
-            raise HTTPException(status_code=500, detail="Status inicial não encontrado")
+        status_inicial = StatusPedidoEnum.PENDENTE
 
         # Criar o pedido
         novo_pedido = Pedido(
             cliente_id=pedido_data.cliente_id,
-            status_id=status_inicial.id,
+            status = status_inicial,
             valor_total=0
         )
-        session.add(novo_pedido)
-        session.flush()
 
-        valor_total = 0
-        # Adicionar os itens do pedido
-        for item in pedido_data.itens:
-            # Verifica se o produto existe
-            produto = session.get(Produto, item["produto_id"])
-            if not produto:
-                session.rollback()
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Produto com ID {item['produto_id']} não encontrado"
+        async with engine.transaction() as transaction:
+            await transaction.save(novo_pedido)
+
+            valor_total = 0
+            # Adicionar os itens do pedido
+            for item in pedido_data.itens:
+                # Verifica se o produto existe
+                produto = await transaction.find_one(Produto, Produto.id == item.id)
+                if not produto:
+                    await transaction.abort()
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Produto com ID {item.id} não encontrado"
+                    )
+
+                # Verifica se há estoque suficiente
+                if produto.estoque < item.quantidade:
+                    await transaction.abort()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Estoque insuficiente para o produto {produto.nome}. Disponível: {produto.estoque}"
+                    )
+
+                item_pedido = ItemPedido(
+                    pedido_id=novo_pedido.id,
+                    produto_id=item.id,
+                    quantidade=item.quantidade,
+                    preco_unitario=item.preco_unitario
                 )
+                valor_total += item.quantidade * item.preco_unitario
+                await transaction.save(item_pedido)
 
-            # Verifica se há estoque suficiente
-            if produto.estoque < item["quantidade"]:
-                session.rollback()
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Estoque insuficiente para o produto {produto.nome}. Disponível: {produto.estoque}"
-                )
+                # Atualiza o estoque do produto
+                produto.estoque -= item.quantidade
+                await transaction.save(produto)
 
-            item_pedido = ItemPedido(
-                pedido_id=novo_pedido.id,
-                produto_id=item["produto_id"],
-                quantidade=item["quantidade"],
-                preco_unitario=item["preco_unitario"]
-            )
-            valor_total += item["quantidade"] * item["preco_unitario"]
-            session.add(item_pedido)
-
-            # Atualiza o estoque do produto
-            produto.estoque -= item["quantidade"]
-            session.add(produto)
-
-        # Atualiza o valor total do pedido
-        novo_pedido.valor_total = valor_total
+            # Atualiza o valor total do pedido
+            novo_pedido.valor_total = valor_total
+            await transaction.save(novo_pedido)
+            await transaction.commit()
+            return novo_pedido
         
-        session.commit()
-        session.refresh(novo_pedido)
-        return novo_pedido
     except HTTPException as e:
-        session.rollback()
-        raise e
-    except Exception as e:
-        session.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao criar pedido: {str(e)}")
 
-
+'''
 @router.get("/", response_model=PaginatedResponse[PedidoResponse])
 def listar_pedidos(
     page: int = Query(default=1, ge=1),
-    size: int = Query(default=10, ge=1, le=100),
-    session: Session = Depends(get_session)
+    size: int = Query(default=10, ge=1, le=100)
 ):
     try:
         offset = (page - 1) * size
@@ -419,5 +404,4 @@ def deletar_pedido(pedido_id: int, session: Session = Depends(get_session)):
             status_code=500, 
             detail=f"Erro ao remover pedido: {str(e)}"
         )
-
 '''
