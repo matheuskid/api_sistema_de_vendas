@@ -43,7 +43,7 @@ async def listar_produtos(
         raise HTTPException(status_code=500, detail=f"Erro ao listar produtos: {str(e)}")
     
 @router.get("/{produto_id}", description="Retorna um produto existente.")
-async def listar_clientes(produto_id: ObjectId) -> Produto:
+async def listar_produtos(produto_id: ObjectId) -> Produto:
     try:
         if produto_id is None:
             raise HTTPException(status_code=400, detail="ID do produto inválido.")
@@ -101,7 +101,7 @@ async def quantidade_produtos():
 
 
 @router.get("/categoria_qtd/{categoria}", description="Retorna a quantidade de produtos por categoria.")
-async def quantidade_clientes(categoria: str):
+async def quantidade_produtos(categoria: str):
     try:
         return {"Quantidade": await engine.count(Produto, query.eq(Produto.categoria, categoria))}
     except Exception as e:
