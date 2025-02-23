@@ -1,25 +1,20 @@
-from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime
 from typing import Optional, List, TypeVar, Generic
+from odmantic import Model, ObjectId, Field
 from pydantic import BaseModel
 from enum import Enum
 
 T = TypeVar('T')
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse(Model, Generic[T]):
     items: List[T]
     total: int
     page: int
     size: int
     pages: int
 
-    class Config:
-        arbitrary_types_allowed = True
-
-class Cliente(SQLModel, table=True):
-    __tablename__ = "cliente"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    nome: str
+class Cliente(Model):
+    nome: str 
     data_nascimento: str
     email: str
     telefone: str
@@ -28,19 +23,28 @@ class Cliente(SQLModel, table=True):
     estado: str
     cep: str
     
-    # Modificando a relação para usar List["Pedido"] com ForwardRef
-    pedidos: List["Pedido"] = Relationship(back_populates="cliente", sa_relationship_kwargs={"lazy": "selectin"})
+class ClienteAtualizado(BaseModel):
+    nome: Optional[str] = None
+    data_nascimento: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    endereco: Optional[str] = None
+    cidade: Optional[str] = None
+    estado: Optional[str] = None
+    cep: Optional[str] = None
 
-class Produto(SQLModel, table=True):
-    __tablename__ = "produto"
-    id: Optional[int] = Field(default=None, primary_key=True)
+class Produto(Model):
     nome: str
     categoria: str
     preco: float
     estoque: int
-    
-    itens: List["ItemPedido"] = Relationship(back_populates="produto")
 
+class ProdutoAtualizado(BaseModel):
+    nome: Optional[str] = None
+    categoria: Optional[str] = None
+    preco: Optional[float] = None
+    estoque: Optional[int] = None
+    
 class StatusPedidoEnum(str, Enum):
     PENDENTE = "Pendente"
     EM_PROCESSAMENTO = "Em Processamento"
@@ -49,36 +53,16 @@ class StatusPedidoEnum(str, Enum):
     ENTREGUE = "Entregue"
     CANCELADO = "Cancelado"
 
-class StatusPedido(SQLModel, table=True):
-    __tablename__ = "status_pedido"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    nome: StatusPedidoEnum
-    descricao: str
-    
-    pedidos: List["Pedido"] = Relationship(back_populates="status")
-
-class Pedido(SQLModel, table=True):
-    __tablename__ = "pedido"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    cliente_id: Optional[int] = Field(foreign_key="cliente.id")
-    status_id: Optional[int] = Field(foreign_key="status_pedido.id")
+class Pedido(Model):
+    cliente_id: ObjectId
+    status: str
     data_pedido: datetime = Field(default_factory=datetime.now)
     valor_total: float
-    
-    cliente: Optional["Cliente"] = Relationship(back_populates="pedidos")
-    status: Optional[StatusPedido] = Relationship(back_populates="pedidos")
-    itens: List["ItemPedido"] = Relationship(back_populates="pedido")
 
-class ItemPedido(SQLModel, table=True):
-    __tablename__ = "item_pedido"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    pedido_id: Optional[int] = Field(foreign_key="pedido.id")
-    produto_id: Optional[int] = Field(foreign_key="produto.id")
+    model_config = {"parse_doc_with_default_factories": True}
+
+class ItemPedido(Model):
+    pedido_id: ObjectId  
+    produto_id: ObjectId
     quantidade: int
     preco_unitario: float
-    
-    pedido: Optional["Pedido"] = Relationship(back_populates="itens")
-    produto: Optional["Produto"] = Relationship(back_populates="itens")
-
-
-
