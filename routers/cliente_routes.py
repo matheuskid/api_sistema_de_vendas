@@ -118,3 +118,34 @@ async def buscar_clientes_por_nome(nome: str) -> list[Cliente]:
         return await engine.find(Cliente, query.match(Cliente.nome, r""+nome))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na busca: {str(e)}")
+
+@router.get("/busca-avancada/", response_model=List[Cliente], description="Busca clientes por texto parcial em múltiplos campos")
+async def buscar_clientes_avancado(
+    termo: str = Query(..., description="Termo para busca (nome, email, cidade ou estado)"),
+    campos: List[str] = Query(
+        default=["nome", "email", "cidade", "estado"],
+        description="Campos para realizar a busca"
+    )
+) -> List[Cliente]:
+    try:
+        # Cria uma lista de condições para cada campo
+        condicoes = []
+        for campo in campos:
+            if hasattr(Cliente, campo):
+                # Usa regex para busca parcial case insensitive
+                condicoes.append(
+                    query.match(getattr(Cliente, campo), f"(?i){termo}")
+                )
+        
+        # Combina as condições com OR
+        if condicoes:
+            resultado = await engine.find(Cliente, query.or_(*condicoes))
+            return resultado
+        else:
+            return []
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Erro na busca avançada: {str(e)}"
+        )
